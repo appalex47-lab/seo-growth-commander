@@ -2,9 +2,13 @@ name: CI - Growth SEO Command Center
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   pull_request:
-    branches: [main]
+    branches:
+      - main
+
   workflow_dispatch:
 
 permissions:
@@ -21,22 +25,28 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      # Descargar el código del repositorio
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Configurar Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "false"
 
+      # Configurar Node.js para validar JavaScript
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
+      # Instalar las herramientas necesarias para las pruebas
       - name: Install test dependency
-        run: python -m pip install --upgrade pip pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
 
+      # Ejecutar las pruebas y validaciones del proyecto
       - name: Run project CI checks
         run: python scripts/ci_check.py
