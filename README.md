@@ -77,3 +77,12 @@ Sigue `docs/revision-final-paso-a-paso.md`. La suite local pasa, pero eso no equ
 
 ## Fase 22 — Search Console
 La pantalla Integraciones permite consultar Google Search Console desde el frontend mediante Google Identity Services (OAuth popup), sin backend propio. Revisa `docs/phases/fase-22-search-console.md` para registrar el origen JavaScript, configurar el ID de cliente y probar una propiedad autorizada. El token se conserva solo en memoria; no se utiliza el Client Secret en el navegador. La prueba E2E requiere credenciales y una propiedad reales.
+
+
+## Fase 23 — Diagnóstico SEO con Search Console
+
+Tras una consulta exitosa en Integraciones, el panel muestra hechos, métricas descriptivas, señales priorizadas (CTR bajo con impresiones, posiciones 4–20 y principales aportadores de clics) e hipótesis por validar. Revisa `docs/phases/fase-23-diagnostico-search-console.md`.
+
+## Fase 24 — Diagnóstico SEO por producto
+
+La sección de consulta de Search Console incorpora un panel que lee el catálogo activo de IndexedDB, permite seleccionar una ficha, revisar su URL y comparar clics, impresiones, CTR y posición contra el periodo anterior de igual duración. Ver `docs/phases/fase-24-vinculo-producto-search-console.md`.
