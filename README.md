@@ -76,4 +76,4 @@ Sigue `docs/revision-final-paso-a-paso.md`. La suite local pasa, pero eso no equ
 
 
 ## Fase 22 — Search Console
-La pantalla Integraciones ahora incluye un panel de consulta real de Search Console. Revisa `docs/phases/fase-22-search-console.md` para configurar OAuth, el gateway y probar una propiedad autorizada. El gateway conserva tokens solo en memoria en esta fase; es una integración funcional para pruebas, no un despliegue de producción.
+La pantalla Integraciones permite consultar Google Search Console desde el frontend mediante Google Identity Services (OAuth popup), sin backend propio. Revisa `docs/phases/fase-22-search-console.md` para registrar el origen JavaScript, configurar el ID de cliente y probar una propiedad autorizada. El token se conserva solo en memoria; no se utiliza el Client Secret en el navegador. La prueba E2E requiere credenciales y una propiedad reales.

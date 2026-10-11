@@ -1,28 +1,35 @@
-# Fase 22 — Integración operativa de Google Search Console
+# Fase 22 — Google Search Console desde frontend (sin backend propio)
 
-## Incluido
-- Panel de consulta de Search Console en Integraciones.
-- Consulta OAuth existente del gateway y `POST /api/sync/gsc/query`.
-- Propiedad manual con soporte para URL-prefix (`https://dominio/`) o Domain property (`sc-domain:dominio.com`).
-- Rango de fechas, granularidad y límite de filas configurables.
-- Tabla de clics, impresiones, CTR y posición; respuesta JSON disponible para auditoría.
-- Mensajes de error para OAuth, permisos, propiedad y fechas.
-- Consulta por defecto a nivel `page`, para preservar la granularidad útil para mapear URLs a productos.
-- La consulta no modifica el catálogo automáticamente ni mezcla page+query con métricas de página.
+## Objetivo
+Conectar la aplicación estática publicada en GitHub Pages directamente con Google Search Console mediante Google Identity Services (GIS), OAuth de navegador con ventana emergente y la Search Console API. Esta fase habilita únicamente Search Console; GA4, Merchant Center y Google Ads no se activan con este flujo.
 
-## Configuración requerida
-1. Crear/configurar credenciales OAuth de tipo Web application en Google Cloud.
-2. Activar Google Search Console API.
-3. Agregar el URI de redirección exacto: `GSSC_PUBLIC_BASE_URL/api/oauth/google/callback`.
-4. Configurar `GSSC_GOOGLE_CLIENT_ID`, `GSSC_GOOGLE_CLIENT_SECRET`, `GSSC_PUBLIC_BASE_URL` y `GSSC_ALLOWED_ORIGINS` en el servidor del gateway.
-5. Ejecutar `python backend/gateway.py` en un entorno local/servidor accesible por HTTPS en uso remoto.
-6. En `frontend/js/integrations.js`, definir `localStorage` key `gssc.gateway.url` con la URL del gateway desplegado si no es localhost.
-7. Autorizar Google, escribir la propiedad exacta, elegir fechas y ejecutar la consulta.
+## Configuración de Google Cloud
+1. Habilitar **Google Search Console API** en el proyecto.
+2. Configurar Google Auth Platform / pantalla de consentimiento. Mientras la app esté en pruebas, agregar la cuenta que se usará para autorizar en la lista de usuarios de prueba.
+3. Crear credencial OAuth de tipo **Aplicación web**.
+4. En **Orígenes autorizados de JavaScript**, agregar exactamente `https://appalex47-lab.github.io` (sin ruta ni barra final).
+5. Para el flujo GIS de token en popup, no se necesita una URI de redirección de backend. No registrar el origen como redirect URI.
+6. Copiar únicamente el **ID de cliente** que termina en `.apps.googleusercontent.com` a la pantalla Integraciones. El **Client Secret no se usa** en frontend y no debe publicarse ni incluirse en el repositorio.
+7. Confirmar que Search Console API está habilitada y que la cuenta autorizada tiene acceso a la propiedad consultada.
 
-## Seguridad y límites
-- Se usa el scope de solo lectura `https://www.googleapis.com/auth/webmasters.readonly`.
-- El navegador solo recibe un identificador opaco de conexión, no tokens OAuth.
-- En esta base los tokens están solo en memoria; reiniciar el gateway invalida la conexión.
-- El gateway aún no debe considerarse producción: requiere almacenamiento cifrado de tokens, autenticación de usuarios/tenants, CSRF/rate limits, revocación, auditoría y pruebas E2E con una cuenta autorizada.
-- No se declara conexión real hasta completar OAuth y obtener respuesta de Google con una propiedad accesible.
-- Search Analytics puede devolver solo las filas principales por límites internos de Google. El resultado no debe interpretarse como una exportación exhaustiva.
+## Uso
+1. Abrir la app en el origen publicado.
+2. Ir a Integraciones, introducir el ID de cliente y pulsar **Conectar con Google**.
+3. Autorizar el permiso `https://www.googleapis.com/auth/webmasters.readonly` en la ventana emergente.
+4. Introducir la propiedad exactamente como aparece en Search Console: URL-prefix como `https://www.ejemplo.com/` o dominio como `sc-domain:ejemplo.com`.
+5. Seleccionar fechas, dimensiones y límite de filas; consultar. La tabla muestra dimensiones, clics, impresiones, CTR y posición.
+
+## Diseño y seguridad
+- GIS entrega un access token temporal al navegador. Se conserva solo en memoria de la pestaña, nunca en localStorage ni en el repositorio.
+- El ID de cliente y la propiedad se guardan en localStorage del navegador. El ID de cliente OAuth es público por diseño.
+- El Client Secret no debe estar en el frontend. Rotar cualquier secreto que haya sido compartido o fotografiado públicamente.
+- El usuario debe autorizar la cuenta y tener permisos sobre la propiedad. Los tokens expiran; volver a autorizar cuando sea necesario.
+- La Search Console API puede devolver filas principales, no necesariamente todas las filas de bajo volumen.
+- Esta modalidad evita un backend propio, pero no proporciona un proxy, sincronización programada ni almacenamiento centralizado. No extiende automáticamente el acceso a GA4, Merchant Center o Google Ads.
+
+## Limitaciones / criterios de aceptación
+- No afirmar conexión real hasta que la autorización GIS termine y una consulta real devuelva respuesta de la API.
+- Si la ventana emergente está bloqueada, permitir popups para el sitio.
+- Errores de origen, consentimiento, API no habilitada, permisos de propiedad o fechas deben mostrarse en estado de interfaz.
+- La desconexión borra el token de memoria y metadatos locales de la integración; los permisos otorgados pueden requerir revocación desde la cuenta de Google.
+- No se ha realizado una prueba E2E con la cuenta Google del usuario ni con sus propiedades reales desde este entorno.

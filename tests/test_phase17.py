@@ -32,8 +32,11 @@ def test_provider_endpoints_and_validation_are_present():
     assert 'analytics.readonly' in source
 
 
-def test_frontend_oauth_message_never_handles_access_tokens():
+def test_frontend_search_console_uses_browser_oauth_without_gateway_tokens():
     source = (ROOT / 'frontend/js/integrations.js').read_text(encoding='utf-8')
-    assert "gssc:google-connected" in source
-    assert 'access_token' not in source
+    assert 'https://accounts.google.com/gsi/client' in source
+    assert 'https://www.googleapis.com/auth/webmasters.readonly' in source
+    assert 'GATEWAY_URL' not in source
+    assert "localStorage.setItem('gssc.google.client_id',clientId)" in source
+    assert 'accessToken=response.access_token' in source
     assert 'client_secret' not in source
