@@ -24,3 +24,23 @@
 .gsc-result-summary { display:flex; flex-wrap:wrap; gap:1rem; margin:.75rem 0; }
 .gsc-query-results pre { max-width:100%; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
 # 【 end */
+
+/* Fase 23 — diagnóstico SEO sobre filas reales de Search Console */
+.gsc-diagnostics { margin-top: 1.25rem; border-top: 3px solid var(--accent, #5477d4); }
+.gsc-dx-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:.75rem; margin:1rem 0; }
+.gsc-dx-kpis article,.gsc-dx-grid article { border:1px solid var(--border,#ddd); border-radius:.65rem; padding:1rem; min-width:0; }
+.gsc-dx-kpis span { display:block; color:var(--muted,#666); font-size:.85rem; }
+.gsc-dx-kpis strong { display:block; font-size:1.4rem; margin-top:.4rem; overflow-wrap:anywhere; }
+.gsc-dx-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:.8rem; }
+.gsc-dx-grid h3 { margin-top:0; font-size:1rem; }
+.gsc-dx-grid p,.gsc-dx-method p { color:var(--muted,#666); font-size:.9rem; line-height:1.5; }
+.gsc-dx-grid ol { padding-left:1.25rem; }
+.gsc-dx-grid li { margin:.7rem 0; overflow-wrap:anywhere; }
+.gsc-dx-name,.gsc-dx-grid li span { display:block; }
+.gsc-dx-name { font-weight:600; margin-bottom:.2rem; }
+.gsc-dx-grid li span { color:var(--muted,#666); font-size:.82rem; }
+.gsc-dx-empty { border-left:3px solid var(--border,#ddd); padding:.5rem .7rem; }
+.gsc-dx-method { margin-top:1rem; padding:1rem; background:var(--surface-muted,#f6f7f9); border-radius:.6rem; }
+
+/* Fase 24 — vínculo catálogo y Search Console */
+.gsc-product-linker{margin-top:1rem;border-top:3px solid var(--blue)}.gsc-product-form{display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1.5fr) auto;gap:.75rem;align-items:end}.gsc-product-form label{display:grid;gap:.35rem;font-size:.88rem}.gsc-product-form input,.gsc-product-form select{width:100%;min-width:0;padding:.65rem;border:1px solid var(--line);border-radius:8px;background:white;color:var(--text)}.gsc-product-interpretation{margin-top:1rem;padding:1rem;border-radius:8px;background:#f8fafc;line-height:1.5}.gsc-product-interpretation p{margin:.25rem 0 .8rem}.gsc-product-error{padding:.8rem;border:1px solid #fecaca;background:#fff7f7;color:#991b1b;border-radius:8px}@media(max-width:850px){.gsc-product-form{grid-template-columns:1fr}}
