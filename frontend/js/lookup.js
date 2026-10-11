@@ -20,7 +20,11 @@ function resultCard(p,index,onSelect){
       <div class="detail"><small>Marca</small>${esc(val(p.Marca))}</div>
       <div class="detail"><small>Sustancia activa</small>${esc(val(p.Sustancia_Activa))}</div>
       <div class="detail"><small>Stock</small>${stock(p.Stock)}</div>
-      <div class="detail"><small>Posición GSC</small>${esc(val(p.Posicion_GSC))}</div>
+      <div class="detail"><small>Posición GSC</small>${esc(p.Posicion_GSC==null?'—':Number(p.Posicion_GSC).toFixed(2))}</div>
+      <div class="detail"><small>Clics GSC</small>${esc(p.Clicks_GSC==null?'—':Number(p.Clicks_GSC).toLocaleString('es-MX'))}</div>
+      <div class="detail"><small>Impresiones GSC</small>${esc(p.Impresiones_GSC==null?'—':Number(p.Impresiones_GSC).toLocaleString('es-MX'))}</div>
+      <div class="detail"><small>CTR GSC</small>${esc(p.CTR_GSC==null?'—':`${(Number(p.CTR_GSC)*100).toFixed(2)}%`)}</div>
+      <div class="detail"><small>Periodo GSC</small>${esc(p.GSC_Periodo_Inicio&&p.GSC_Periodo_Fin?`${p.GSC_Periodo_Inicio} a ${p.GSC_Periodo_Fin}`:'—')}</div>
       <div class="detail"><small>Conversión</small>${p.Conversion_Rate==null?'—':pct(p.Conversion_Rate)}</div>
       <div class="detail"><small>Revenue Gap</small>${money(p.Revenue_Gap)}</div>
     </div>
