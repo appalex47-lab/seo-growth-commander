@@ -5,7 +5,7 @@ import {renderMatrix,mountMatrix} from './matrix.js';
 import {renderBacklog,bindBacklog} from './backlog.js';
 import {renderLookup,bindLookup} from './lookup.js';
 import {loadScenarios,renderTestLab,bindTestLab} from './testLab.js';
-import {loadIntegrationConfig,renderIntegrations,bindIntegrations,getGatewayStatus} from './integrations.js';
+import {loadIntegrationConfig,renderIntegrations,bindIntegrations,getGatewayStatus,syncAllSources} from './integrations.js';
 import {loadAIConfig,renderAI,bindAI} from './ai.js';
 import {saveCatalog,loadCatalog,deleteCatalog,deleteCatalogBySource} from './storage.js';
 // Compatibility note: legacy reset used `await deleteCatalog()`; the test-data button now deletes only the test catalog.
@@ -63,6 +63,22 @@ async function removeTestData(){
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',async()=>{state.view=b.dataset.view;if(state.view==='lab') await openLab(); else {render();toast(`${titles[state.view]} cargado correctamente`)}}));
 document.getElementById('add-test-data').addEventListener('click',addTestData);
 document.getElementById('remove-test-data').addEventListener('click',removeTestData);
+document.getElementById('sync-information').addEventListener('click',syncInformation);
+
+function showSyncReport(result){
+ const root=document.getElementById('sync-report-root');
+ const labels={success:'Sincronizado',error:'Error',needs_setup:'Requiere configuración',not_implemented:'Pendiente de integración'};
+ const rows=result.report.map(item=>`<article class="sync-report-item"><div><strong>${escapeHtml(item.name)}</strong><span class="sync-status ${escapeHtml(item.status)}">${escapeHtml(labels[item.status]||item.status)}</span></div><p>${escapeHtml(item.message)}</p></article>`).join('');
+ root.innerHTML=`<div class="sync-modal-backdrop" id="sync-modal-backdrop"><section class="sync-modal card" role="dialog" aria-modal="true" aria-labelledby="sync-modal-title"><button class="close" id="sync-modal-close" type="button">Cerrar</button><p class="eyebrow">CENTRO DE DATOS</p><h2 id="sync-modal-title">Resultado de sincronización</h2><p class="section-sub">Finalizado: ${escapeHtml(new Date(result.completedAt).toLocaleString('es-MX'))}</p>${rows}<p class="integration-note">Las fuentes marcadas como pendientes no se consultaron ni generaron datos ficticios. La sincronización disponible ahora es Search Console.</p></section></div>`;
+ const close=()=>root.replaceChildren();root.querySelector('#sync-modal-close').onclick=close;root.querySelector('#sync-modal-backdrop').addEventListener('click',e=>{if(e.target.id==='sync-modal-backdrop')close()});
+}
+async function syncInformation(){
+ const button=document.getElementById('sync-information');if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Sincronizando…';
+ try{const result=await syncAllSources({onProgress:message=>{button.textContent=message}});const stored=await loadCatalog().catch(()=>null);if(stored?.data){state.data=stored.data;state.dataSource=stored.source||state.dataSource;setStatus();render()}showSyncReport(result);const success=result.report.filter(x=>x.status==='success').length;toast(success?`Sincronización terminada: ${success} fuente(s) actualizadas`:'Sincronización terminada; revisa el detalle de fuentes');}
+ catch(error){showSyncReport({completedAt:new Date().toISOString(),report:[{id:'sync',name:'Sincronización central',status:'error',message:error.message||'Error inesperado.'}]});toast('La sincronización no pudo completarse')}
+ finally{button.disabled=false;button.textContent=original}
+}
+
 
 view.innerHTML='<div class="card loading">Recuperando catálogo…</div>';
 (async()=>{

@@ -65,6 +65,43 @@ export async function runGA4Report({connectionId,propertyId,startDate,endDate,di
 async function providerRequest(path,payload){throw new Error('Esta fuente aún requiere una integración propia; la Fase 22 sin backend habilita únicamente Search Console.')}
 export async function getGatewayStatus(){return {available:false,error:'La Fase 22 usa OAuth en navegador y no necesita gateway para Search Console.',google:{configured:false,sources:[]},cohere:{server_configured:false},production_ready:false}}
 
+
+// Sincronización central: ejecuta las fuentes realmente disponibles y devuelve un informe por fuente.
+export async function syncAllSources({onProgress=()=>{}}={}){
+  const config=loadIntegrationConfig();
+  const report=[];
+  onProgress('Preparando sincronización…');
+  const gsc=config.gsc||{};
+  if(!gsc.siteUrl){
+    report.push({id:'gsc',name:'Google Search Console',status:'needs_setup',message:'Configura la propiedad en Integraciones antes de sincronizar.'});
+  }else{
+    try{
+      onProgress('Consultando Google Search Console…');
+      // Search Console suele tener un retraso de algunos días; excluir los últimos 3 días evita interpretar datos incompletos como definitivos.
+      const end=new Date();end.setUTCDate(end.getUTCDate()-3);
+      const start=new Date(end);start.setUTCDate(start.getUTCDate()-13);
+      const fmt=d=>d.toISOString().slice(0,10);
+      const startDate=fmt(start),endDate=fmt(end);
+      const result=await querySearchConsole({siteUrl:gsc.siteUrl,startDate,endDate,dimensions:['page'],rowLimit:25000});
+      const rows=result?.data?.rows||[];
+      const summary=await syncGscRowsToCatalog(rows,{siteUrl:gsc.siteUrl,startDate,endDate});
+      config.gsc={...gsc,enabled:true,configured:true,lastSync:new Date().toISOString()};
+      saveIntegrationConfig(config);
+      report.push({id:'gsc',name:'Google Search Console',status:'success',message:`${rows.length} filas consultadas; ${summary.updated} producto(s) actualizado(s). Periodo ${startDate} a ${endDate}.`,rows:rows.length,updated:summary.updated,startDate,endDate});
+    }catch(error){
+      report.push({id:'gsc',name:'Google Search Console',status:'error',message:error?.message||'Error desconocido al consultar Search Console.'});
+    }
+  }
+  for(const [id,name,detail] of [
+    ['ga4','Google Analytics 4','La integración ejecutable requiere configurar un conector seguro de GA4; todavía no está implementado en esta versión frontend-only.'],
+    ['merchant','Google Merchant Center','La sincronización de Merchant Center requiere implementar su API y autorización; todavía no está disponible.'],
+    ['ads','Google Ads','La sincronización de Google Ads requiere un conector autorizado y backend; todavía no está disponible.'],
+    ['trends','Google Trends','No hay una fuente/API de Trends configurada en esta versión; no se simularán datos.']
+  ]) report.push({id,name,status:'not_implemented',message:detail});
+  onProgress('Sincronización finalizada.');
+  return {completedAt:new Date().toISOString(),report};
+}
+
 function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 
 function normalizeProductUrl(value,siteUrl){const raw=String(value||'').trim();if(!raw)return '';try{if(/^https?:\/\//i.test(raw))return new URL(raw).href;const base=/^https?:\/\//i.test(siteUrl)?siteUrl:'https://'+String(siteUrl||'').replace(/^sc-domain:/,'');return new URL(raw.replace(/^\/+/,''),base.endsWith('/')?base:base+'/').href}catch{return raw}}
