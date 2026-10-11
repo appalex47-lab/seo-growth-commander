@@ -14,6 +14,8 @@ import {renderCatalog,bindCatalog} from './catalog.js';
 const state={data:null,view:'overview',dataSource:'none',scenarios:null};
 const view=document.getElementById('app-view'),title=document.getElementById('view-title'),status=document.getElementById('data-status');
 const titles={overview:'Executive Overview',matrix:'Strategic Action Matrix',backlog:'Operational Backlog',lookup:'Product Lookup',lab:'Test Data Lab',integrations:'Integraciones',ai:'Configuración IA',catalog:'Catálogo y datos'};
+window.addEventListener('gssc:catalog-updated',async()=>{try{const stored=await loadCatalog();state.data=stored?.data||state.data;state.dataSource=stored?.source||state.dataSource;setStatus();if(state.view==='backlog'||state.view==='lookup')render();toast('Métricas de Search Console guardadas en el catálogo');}catch(error){toast('Las métricas se guardaron, pero no se pudo actualizar la vista');}});
+
 
 function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>el.classList.remove('show'),2400)}
 function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
