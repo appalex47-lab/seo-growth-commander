@@ -3,10 +3,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_product_gsc_diagnostic_is_linked_to_catalog_and_exact_page_filter():
     js = (ROOT / 'frontend/js/integrations.js').read_text(encoding='utf-8')
-    assert "import {loadCatalog} from './storage.js'" in js
+    assert "import {loadCatalog,saveCatalog} from './storage.js'" in js
     assert "dimension:'page',operator:'equals',expression:pageUrl" in js
     assert "gsc-product-select" in js
     assert "gsc-product-compare" in js
+    assert "GSC_Ultima_Actualizacion" in js
+    assert "gssc:catalog-updated" in js
 
 def test_product_diagnostic_compares_equal_length_previous_periods():
     js = (ROOT / 'frontend/js/integrations.js').read_text(encoding='utf-8')
