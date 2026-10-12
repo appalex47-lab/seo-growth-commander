@@ -1,3 +1,4 @@
+import {renderPeriodControls,loadGlobalPeriod,saveGlobalPeriod,periodRange,getGlobalPeriod} from './period.js';
 import {loadData} from './data.js';
 import {calculateDataset} from './businessRules.js';
 import {renderOverview,mountOverviewChart} from './dashboard.js';
@@ -12,6 +13,9 @@ import {saveCatalog,loadCatalog,deleteCatalog,deleteCatalogBySource} from './sto
 import {renderCatalog,bindCatalog} from './catalog.js';
 
 const state={data:null,view:'overview',dataSource:'none',scenarios:null};
+document.getElementById('global-period-host').innerHTML=renderPeriodControls();
+function bindGlobalPeriod(){const select=document.getElementById('global-period-select'),custom=document.getElementById('global-period-custom'),label=document.getElementById('global-period-label');const saved=loadGlobalPeriod();const update=(p)=>{try{saveGlobalPeriod(p);const range=periodRange(p.key,p.startDate,p.endDate);label.textContent=range.label;window.dispatchEvent(new CustomEvent('gssc:period-changed',{detail:range}));}catch(e){toast(e.message)}};select.addEventListener('change',()=>{custom.hidden=select.value!=='custom';const p={key:select.value,startDate:'',endDate:''};if(select.value==='custom'){const r=periodRange('28d');document.getElementById('global-period-start').value=r.startDate;document.getElementById('global-period-end').value=r.endDate;return}update(p)});document.getElementById('global-period-apply').addEventListener('click',()=>update({key:'custom',startDate:document.getElementById('global-period-start').value,endDate:document.getElementById('global-period-end').value}));window.addEventListener('gssc:period-changed',()=>{if(state.view==='integrations')render()});label.textContent=periodRange(saved.key,saved.startDate,saved.endDate).label;}
+bindGlobalPeriod();
 const view=document.getElementById('app-view'),title=document.getElementById('view-title'),status=document.getElementById('data-status');
 const titles={overview:'Executive Overview',matrix:'Strategic Action Matrix',backlog:'Operational Backlog',lookup:'Product Lookup',lab:'Test Data Lab',integrations:'Integraciones',ai:'Configuración IA',catalog:'Catálogo y datos'};
 window.addEventListener('gssc:catalog-updated',async()=>{try{const stored=await loadCatalog();state.data=stored?.data||state.data;state.dataSource=stored?.source||state.dataSource;setStatus();if(state.view==='backlog'||state.view==='lookup')render();toast('Métricas de Search Console guardadas en el catálogo');}catch(error){toast('Las métricas se guardaron, pero no se pudo actualizar la vista');}});
@@ -74,7 +78,7 @@ function showSyncReport(result){
 }
 async function syncInformation(){
  const button=document.getElementById('sync-information');if(button.disabled)return;button.disabled=true;const original=button.textContent;button.textContent='Sincronizando…';
- try{const result=await syncAllSources({onProgress:message=>{button.textContent=message}});const stored=await loadCatalog().catch(()=>null);if(stored?.data){state.data=stored.data;state.dataSource=stored.source||state.dataSource;setStatus();render()}showSyncReport(result);const success=result.report.filter(x=>x.status==='success').length;toast(success?`Sincronización terminada: ${success} fuente(s) actualizadas`:'Sincronización terminada; revisa el detalle de fuentes');}
+ try{const period=getGlobalPeriod();const result=await syncAllSources({onProgress:message=>{button.textContent=message},period});const stored=await loadCatalog().catch(()=>null);if(stored?.data){state.data=stored.data;state.dataSource=stored.source||state.dataSource;setStatus();render()}showSyncReport(result);const success=result.report.filter(x=>x.status==='success').length;toast(success?`Sincronización terminada: ${success} fuente(s) actualizadas`:'Sincronización terminada; revisa el detalle de fuentes');}
  catch(error){showSyncReport({completedAt:new Date().toISOString(),report:[{id:'sync',name:'Sincronización central',status:'error',message:error.message||'Error inesperado.'}]});toast('La sincronización no pudo completarse')}
  finally{button.disabled=false;button.textContent=original}
 }

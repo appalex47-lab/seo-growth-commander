@@ -1,3 +1,4 @@
+import {getGlobalPeriod,loadGlobalPeriod,periodRange} from './period.js';
 import {renderGscDiagnostics} from './gscDiagnostics.js';
 import {loadCatalog,saveCatalog} from './storage.js';
 const STORAGE_KEY='gssc.integration.config.v2';
@@ -67,7 +68,7 @@ export async function getGatewayStatus(){return {available:false,error:'La Fase 
 
 
 // Sincronización central: ejecuta las fuentes realmente disponibles y devuelve un informe por fuente.
-export async function syncAllSources({onProgress=()=>{}}={}){
+export async function syncAllSources({onProgress=()=>{},period=getGlobalPeriod()}={}){
   const config=loadIntegrationConfig();
   const report=[];
   onProgress('Preparando sincronización…');
@@ -77,17 +78,18 @@ export async function syncAllSources({onProgress=()=>{}}={}){
   }else{
     try{
       onProgress('Consultando Google Search Console…');
-      // Search Console suele tener un retraso de algunos días; excluir los últimos 3 días evita interpretar datos incompletos como definitivos.
-      const end=new Date();end.setUTCDate(end.getUTCDate()-3);
-      const start=new Date(end);start.setUTCDate(start.getUTCDate()-13);
-      const fmt=d=>d.toISOString().slice(0,10);
-      const startDate=fmt(start),endDate=fmt(end);
+      // Usa el rango global seleccionado. El selector calcula el final con 3 días de margen por retraso de GSC.
+      const startDate=period.startDate,endDate=period.endDate;
       const result=await querySearchConsole({siteUrl:gsc.siteUrl,startDate,endDate,dimensions:['page'],rowLimit:25000});
       const rows=result?.data?.rows||[];
       const summary=await syncGscRowsToCatalog(rows,{siteUrl:gsc.siteUrl,startDate,endDate});
+      const dayMs=86400000,days=period.days||Math.round((Date.parse(endDate+'T00:00:00Z')-Date.parse(startDate+'T00:00:00Z'))/dayMs)+1;
+      const prevEnd=new Date(Date.parse(startDate+'T00:00:00Z')-dayMs),prevStart=new Date(prevEnd.getTime()-(days-1)*dayMs),fmt=d=>d.toISOString().slice(0,10);
+      let comparison='No se pudo obtener el periodo anterior equivalente.';
+      try{const prior=await querySearchConsole({siteUrl:gsc.siteUrl,startDate:fmt(prevStart),endDate:fmt(prevEnd),dimensions:['page'],rowLimit:25000});const oldRows=prior?.data?.rows||[];if(rows.length||oldRows.length){const total=arr=>arr.reduce((a,r)=>({clicks:a.clicks+Number(r.clicks||0),impressions:a.impressions+Number(r.impressions||0)}),{clicks:0,impressions:0});const a=total(rows),b=total(oldRows),change=(x,y)=>y?`${((x-y)/y*100)>=0?'+':''}${((x-y)/y*100).toFixed(1)}%`:x?'sin base anterior (0)': 'sin variación cuantificable';comparison=`Comparación equivalente ${fmt(prevStart)} a ${fmt(prevEnd)}: clics ${change(a.clicks,b.clicks)}; impresiones ${change(a.impressions,b.impressions)}.`;}else comparison=`Sin filas en ambos periodos; no se calcula variación.`;}catch(e){comparison=`No se pudo comparar el periodo anterior: ${e.message}`;}
       config.gsc={...gsc,enabled:true,configured:true,lastSync:new Date().toISOString()};
       saveIntegrationConfig(config);
-      report.push({id:'gsc',name:'Google Search Console',status:'success',message:`${rows.length} filas consultadas; ${summary.updated} producto(s) actualizado(s). Periodo ${startDate} a ${endDate}.`,rows:rows.length,updated:summary.updated,startDate,endDate});
+      report.push({id:'gsc',name:'Google Search Console',status:'success',message:`${rows.length} filas consultadas; ${summary.updated} producto(s) actualizado(s). Periodo ${startDate} a ${endDate}. ${comparison}`,rows:rows.length,updated:summary.updated,startDate,endDate});
     }catch(error){
       report.push({id:'gsc',name:'Google Search Console',status:'error',message:error?.message||'Error desconocido al consultar Search Console.'});
     }
@@ -142,8 +144,7 @@ export function renderIntegrations(config=loadIntegrationConfig(),gatewayStatus=
  <section class="card gsc-query-panel"><div><p class="eyebrow">SEARCH CONSOLE · CONSULTA REAL</p><h2>Conectar y consultar rendimiento orgánico</h2><p>Usa un ID de cliente OAuth de tipo Aplicación web, con el origen autorizado <code>https://appalex47-lab.github.io</code>. No pegues aquí el secreto del cliente.</p></div>
  <div class="gsc-query-form"><label>ID de cliente OAuth<input id="gsc-client-id" type="text" autocomplete="off" placeholder="...apps.googleusercontent.com" value="${escapeHtml(clientId)}"></label><button class="primary-btn" id="gsc-connect">${connected?'Volver a autorizar Google':'Conectar con Google'}</button>
  <label>Propiedad de Search Console<input id="gsc-site-url" type="text" placeholder="https://www.tudominio.com/ o sc-domain:tudominio.com" value="${escapeHtml(config.gsc?.siteUrl||'')}"></label>
- <label>Fecha inicial<input id="gsc-start-date" type="date" value="${new Date(Date.now()-14*86400000).toISOString().slice(0,10)}"></label>
- <label>Fecha final<input id="gsc-end-date" type="date" value="${new Date(Date.now()-3*86400000).toISOString().slice(0,10)}"></label>
+ <div class="gsc-global-period-note"><strong>Periodo global activo</strong><span id="gsc-global-period-value">${getGlobalPeriod().label}</span><small>Modifícalo en el selector global de la parte superior; las consultas y sincronizaciones usan el mismo rango.</small></div>
  <label>Dimensiones<select id="gsc-dimensions"><option value="page">Página</option><option value="query,page">Consulta + página</option><option value="date,page">Fecha + página</option><option value="country,device,page">País + dispositivo + página</option></select></label>
  <label>Límite de filas<select id="gsc-row-limit"><option value="250">250</option><option value="1000">1,000</option><option value="5000">5,000</option></select></label><button class="primary-btn" id="gsc-run-query">Consultar Search Console</button><button class="secondary-btn" id="gsc-disconnect">Desconectar</button></div>
  <p class="integration-note" id="gsc-query-status" role="status">${connected?'Autorización registrada en esta sesión.':'Configura el ID de cliente y autoriza tu cuenta de Google.'} El token de acceso solo se mantiene en memoria y puede caducar.</p><div id="gsc-query-results" class="gsc-query-results" aria-live="polite"></div></section>
@@ -161,10 +162,9 @@ export function bindIntegrations(root,toast){
  });
  root.querySelector('#gsc-run-query')?.addEventListener('click',async()=>{
    const statusEl=status(),resultsEl=root.querySelector('#gsc-query-results');const siteUrl=root.querySelector('#gsc-site-url')?.value.trim();
-   const startDate=root.querySelector('#gsc-start-date')?.value,endDate=root.querySelector('#gsc-end-date')?.value;
+   const {startDate,endDate}=getGlobalPeriod();
    const dimensions=(root.querySelector('#gsc-dimensions')?.value||'page').split(',');const rowLimit=Number(root.querySelector('#gsc-row-limit')?.value||250);
    if(!getClientId()){statusEl.textContent='Guarda y autoriza primero el ID de cliente OAuth.';return}if(!siteUrl){statusEl.textContent='Escribe la propiedad exacta como aparece en Search Console.';return}
-   if(!startDate||!endDate||startDate>endDate){statusEl.textContent='Revisa el rango de fechas.';return}
    statusEl.textContent='Consultando Google Search Console…';resultsEl.innerHTML='';const button=root.querySelector('#gsc-run-query');if(button)button.disabled=true;
    try{const result=await querySearchConsole({siteUrl,startDate,endDate,dimensions,rowLimit});const rows=result?.data?.rows||[];let syncSummary={updated:0,matched:[]};try{syncSummary=await syncGscRowsToCatalog(rows,{siteUrl,startDate,endDate});}catch(syncError){console.warn('No se pudieron sincronizar las métricas GSC con el catálogo:',syncError)}const config=loadIntegrationConfig();config.gsc={...config.gsc,siteUrl,enabled:true,configured:true,lastSync:new Date().toISOString()};saveIntegrationConfig(config);
      statusEl.textContent=`Consulta completada: ${rows.length} filas (${startDate} a ${endDate}). ${syncSummary.updated?`${syncSummary.updated} producto(s) del catálogo actualizados automáticamente.`:'No se encontró coincidencia exacta entre las URLs consultadas y las fichas del catálogo.'} Google puede omitir filas de bajo volumen.`;
