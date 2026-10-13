@@ -11,7 +11,8 @@ def test_central_sync_runs_real_gsc_and_reports_unsupported_sources_honestly():
     js = (ROOT / 'frontend/js/integrations.js').read_text(encoding='utf-8')
     assert 'export async function syncAllSources' in js
     assert "dimensions:['page'],rowLimit:25000" in js
-    assert "['ga4','Google Analytics 4'" in js
+    assert "const ga4=config.ga4||{}" in js
+    assert 'queryGA4Summary' in js
     assert "['merchant','Google Merchant Center'" in js
     assert "['ads','Google Ads'" in js
     assert "['trends','Google Trends'" in js
