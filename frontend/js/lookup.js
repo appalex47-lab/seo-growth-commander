@@ -25,6 +25,14 @@ function resultCard(p,index,onSelect){
       <div class="detail"><small>Impresiones GSC</small>${esc(p.Impresiones_GSC==null?'—':Number(p.Impresiones_GSC).toLocaleString('es-MX'))}</div>
       <div class="detail"><small>CTR GSC</small>${esc(p.CTR_GSC==null?'—':`${(Number(p.CTR_GSC)*100).toFixed(2)}%`)}</div>
       <div class="detail"><small>Periodo GSC</small>${esc(p.GSC_Periodo_Inicio&&p.GSC_Periodo_Fin?`${p.GSC_Periodo_Inicio} a ${p.GSC_Periodo_Fin}`:'—')}</div>
+      <div class="detail"><small>Estado de métricas GSC</small>${esc(p.GSC_Estado==='sincronizado'?'Sincronizado':(p.Clicks_GSC!=null||p.Impresiones_GSC!=null||p.Posicion_GSC!=null?'Datos existentes; periodo no confirmado':'Sin métricas guardadas'))}</div>
+      <div class="detail"><small>Sesiones GA4</small>${esc(p.GA4_Sesiones==null?'—':Number(p.GA4_Sesiones).toLocaleString('es-MX'))}</div>
+      <div class="detail"><small>Usuarios GA4</small>${esc(p.GA4_Usuarios==null?'—':Number(p.GA4_Usuarios).toLocaleString('es-MX'))}</div>
+      <div class="detail"><small>Vistas GA4</small>${esc(p.GA4_Vistas==null?'—':Number(p.GA4_Vistas).toLocaleString('es-MX'))}</div>
+      <div class="detail"><small>Eventos clave GA4</small>${esc(p.GA4_Eventos_Clave==null?'—':Number(p.GA4_Eventos_Clave).toLocaleString('es-MX'))}</div>
+      <div class="detail"><small>Ingresos GA4</small>${esc(p.GA4_Ingresos==null?'—':Number(p.GA4_Ingresos).toLocaleString('es-MX',{maximumFractionDigits:2}))}</div>
+      <div class="detail"><small>Periodo GA4</small>${esc(p.GA4_Periodo_Inicio&&p.GA4_Periodo_Fin?`${p.GA4_Periodo_Inicio} a ${p.GA4_Periodo_Fin}`:'—')}</div>
+      <div class="detail"><small>Estado GA4</small>${esc(p.GA4_Estado==='sincronizado'?`Sincronizado · ${p.GA4_Canal||'canal no indicado'}`:'Sin métricas GA4 guardadas')}</div>
       <div class="detail"><small>Conversión</small>${p.Conversion_Rate==null?'—':pct(p.Conversion_Rate)}</div>
       <div class="detail"><small>Revenue Gap</small>${money(p.Revenue_Gap)}</div>
     </div>

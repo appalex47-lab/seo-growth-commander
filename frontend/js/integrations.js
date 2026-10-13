@@ -4,6 +4,8 @@ import {loadCatalog,saveCatalog} from './storage.js';
 const STORAGE_KEY='gssc.integration.config.v2';
 const GOOGLE_GIS_URL='https://accounts.google.com/gsi/client';
 const GSC_SCOPE='https://www.googleapis.com/auth/webmasters.readonly';
+const GA4_SCOPE='https://www.googleapis.com/auth/analytics.readonly';
+const GA4_STORAGE_KEY='gssc.ga4.last-report.v1';
 let gisPromise=null;
 let accessToken=null;
 let tokenExpiresAt=0;
@@ -48,7 +50,7 @@ export async function getGoogleAccessToken({forceConsent=false}={}){
   const clientId=getClientId();if(!clientId)throw new Error('Guarda primero el ID de cliente OAuth en la configuración de Search Console.');
   const google=window.google?.accounts?.oauth2?window.google:await loadGoogleGIS();
   return await new Promise((resolve,reject)=>{
-    const client=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:GSC_SCOPE,include_granted_scopes:true,callback:(response)=>{
+    const client=google.accounts.oauth2.initTokenClient({client_id:clientId,scope:`${GSC_SCOPE} ${GA4_SCOPE}`,include_granted_scopes:true,callback:(response)=>{
       if(response?.error){reject(new Error(response.error_description||response.error));return}
       if(!response?.access_token){reject(new Error('Google no devolvió un token de acceso.'));return}
       accessToken=response.access_token;tokenExpiresAt=Date.now()+Math.max(0,Number(response.expires_in||3600))*1000;resolve(accessToken);
@@ -60,11 +62,78 @@ export function disconnectGoogleSearchConsole(){
   if(accessToken&&window.google?.accounts?.oauth2?.revoke)window.google.accounts.oauth2.revoke(accessToken,()=>{});
   accessToken=null;tokenExpiresAt=0;const config=loadIntegrationConfig();config.gsc={...config.gsc,configured:false,connectionId:null,account:''};saveIntegrationConfig(config);
 }
-export async function runGA4Report({connectionId,propertyId,startDate,endDate,dimensions=[{name:'landingPagePlusQueryString'}],metrics=[{name:'sessions'},{name:'keyEvents'},{name:'totalRevenue'}],limit=1000}){
-  return providerRequest('/api/sync/ga4/report',{connection_id:connectionId,property_id:String(propertyId),start_date:startDate,end_date:endDate,dimensions,metrics,limit});
+export async function runGA4Report({propertyId,startDate,endDate,channel='organic',dimensions=[{name:'date'}],metrics=[{name:'sessions'},{name:'totalUsers'},{name:'screenPageViews'},{name:'keyEvents'},{name:'purchaseRevenue'}],limit=1000}){
+  const id=String(propertyId||'').trim();
+  if(!/^\d+$/.test(id))throw new Error('El Property ID de GA4 debe ser numérico.');
+  if(!startDate||!endDate||startDate>endDate)throw new Error('El rango de fechas no es válido.');
+  const token=await getGoogleAccessToken();
+  const body={dateRanges:[{startDate,endDate}],dimensions,metrics,limit:Math.min(100000,Math.max(1,Number(limit)||1000)),keepEmptyRows:false};
+  if(channel==='organic')body.dimensionFilter={filter:{fieldName:'sessionDefaultChannelGroup',stringFilter:{matchType:'EXACT',value:'Organic Search',caseSensitive:false}}};
+  const response=await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${encodeURIComponent(id)}:runReport`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(body)});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok){const message=data?.error?.message||`Google Analytics Data API HTTP ${response.status}`;if(response.status===401){accessToken=null;tokenExpiresAt=0}throw new Error(message)}
+  return {data,source:'Google Analytics Data API',propertyId:id,startDate,endDate,channel};
 }
-async function providerRequest(path,payload){throw new Error('Esta fuente aún requiere una integración propia; la Fase 22 sin backend habilita únicamente Search Console.')}
-export async function getGatewayStatus(){return {available:false,error:'La Fase 22 usa OAuth en navegador y no necesita gateway para Search Console.',google:{configured:false,sources:[]},cohere:{server_configured:false},production_ready:false}}
+
+export function previousEquivalentRange(period){
+ const days=Math.max(1,Number(period?.days)||1);
+ const end=new Date(`${period.startDate}T00:00:00Z`);end.setUTCDate(end.getUTCDate()-1);
+ const start=new Date(end);start.setUTCDate(start.getUTCDate()-(days-1));
+ const fmt=d=>d.toISOString().slice(0,10);
+ return {startDate:fmt(start),endDate:fmt(end),days};
+}
+export function ga4DimensionConfig(value){
+ const options={date:[{name:'date'}],landingPage:[{name:'landingPage'}],sourceMedium:[{name:'sessionSourceMedium'}],channel:[{name:'sessionDefaultChannelGroup'}]};
+ return options[value]||options.date;
+}
+export function ga4RowsToObjects(data){
+ const dimensions=(data?.dimensionHeaders||[]).map(h=>h.name),metrics=(data?.metricHeaders||[]).map(h=>h.name);
+ return (data?.rows||[]).map(row=>{const out={};dimensions.forEach((name,i)=>out[name]=row.dimensionValues?.[i]?.value??'');metrics.forEach((name,i)=>out[name]=row.metricValues?.[i]?.value??'0');return out;});
+}
+
+// Vincula métricas de GA4 con fichas únicamente cuando la landing page coincide con una URL única.
+export async function syncGA4LandingPagesToCatalog(rows,{startDate,endDate,channel='organic'}={}){
+ const stored=await loadCatalog(),products=stored?.data?.products;
+ if(stored?.source!=='real')return {updated:0,matched:0,unmatched:0,ambiguous:[],reason:'El catálogo activo no es el catálogo real.'};
+ if(!Array.isArray(products)||!products.length)return {updated:0,matched:0,unmatched:0,ambiguous:[],reason:'No hay productos en el catálogo real.'};
+ const totals=new Map();
+ for(const row of rows||[]){
+  const raw=String(row.landingPage||row.landingPagePlusQueryString||'').trim();
+  if(!raw||raw==='(not set)'||raw==='(not provided)')continue;
+  const key=canonicalPageUrl(raw,loadIntegrationConfig().gsc?.siteUrl);if(!key)continue;
+  const current=totals.get(key)||{sessions:0,users:0,views:0,keyEvents:0,revenue:0};
+  current.sessions+=Math.max(0,Number(row.sessions)||0);
+  current.users+=Math.max(0,Number(row.totalUsers)||0);
+  current.views+=Math.max(0,Number(row.screenPageViews)||0);
+  current.keyEvents+=Math.max(0,Number(row.keyEvents)||0);
+  current.revenue+=Math.max(0,Number(row.purchaseRevenue)||0);
+  totals.set(key,current);
+ }
+ const index=new Map();
+ for(const product of products){
+  const key=canonicalPageUrl(product.URL_Slug,loadIntegrationConfig().gsc?.siteUrl);if(!key)continue;
+  const list=index.get(key)||[];list.push(product);index.set(key,list);
+ }
+ const updates=new Map(),ambiguous=[];
+ for(const [key,metrics] of totals){
+  const matches=index.get(key)||[];
+  if(matches.length===1)updates.set(String(matches[0].SKU),metrics);
+  else if(matches.length>1)ambiguous.push(key);
+ }
+ const next=products.map(product=>{
+  const metrics=updates.get(String(product.SKU));if(!metrics)return product;
+  return {...product,GA4_Sesiones:metrics.sessions,GA4_Usuarios:metrics.users,GA4_Vistas:metrics.views,GA4_Eventos_Clave:metrics.keyEvents,GA4_Ingresos:metrics.revenue,GA4_Canal:channel,GA4_Periodo_Inicio:startDate||'',GA4_Periodo_Fin:endDate||'',GA4_Ultima_Actualizacion:new Date().toISOString(),GA4_Estado:'sincronizado'};
+ });
+ if(updates.size){
+  await saveCatalog({...stored.data,products:next},'real');
+  window.dispatchEvent(new CustomEvent('gssc:catalog-updated',{detail:{source:'ga4',updated:updates.size}}));
+ }
+ return {updated:updates.size,matched:updates.size,unmatched:Math.max(0,totals.size-updates.size-ambiguous.length),ambiguous,reason:updates.size?'':'No hubo coincidencias únicas entre landing pages y URLs del catálogo.'};
+}
+async function queryGA4Summary({propertyId,startDate,endDate,channel='organic'}){
+ return runGA4Report({propertyId,startDate,endDate,channel,dimensions:[],metrics:[{name:'sessions'},{name:'totalUsers'},{name:'screenPageViews'},{name:'keyEvents'},{name:'purchaseRevenue'}],limit:1});
+}
+export async function getGatewayStatus(){return {available:false,error:'GA4 y Search Console consultan sus APIs directamente desde el navegador.',google:{configured:false,sources:[]},cohere:{server_configured:false},production_ready:false}}
 
 
 // Sincronización central: ejecuta las fuentes realmente disponibles y devuelve un informe por fuente.
@@ -89,13 +158,36 @@ export async function syncAllSources({onProgress=()=>{},period=getGlobalPeriod()
       try{const prior=await querySearchConsole({siteUrl:gsc.siteUrl,startDate:fmt(prevStart),endDate:fmt(prevEnd),dimensions:['page'],rowLimit:25000});const oldRows=prior?.data?.rows||[];if(rows.length||oldRows.length){const total=arr=>arr.reduce((a,r)=>({clicks:a.clicks+Number(r.clicks||0),impressions:a.impressions+Number(r.impressions||0)}),{clicks:0,impressions:0});const a=total(rows),b=total(oldRows),change=(x,y)=>y?`${((x-y)/y*100)>=0?'+':''}${((x-y)/y*100).toFixed(1)}%`:x?'sin base anterior (0)': 'sin variación cuantificable';comparison=`Comparación equivalente ${fmt(prevStart)} a ${fmt(prevEnd)}: clics ${change(a.clicks,b.clicks)}; impresiones ${change(a.impressions,b.impressions)}.`;}else comparison=`Sin filas en ambos periodos; no se calcula variación.`;}catch(e){comparison=`No se pudo comparar el periodo anterior: ${e.message}`;}
       config.gsc={...gsc,enabled:true,configured:true,lastSync:new Date().toISOString()};
       saveIntegrationConfig(config);
-      report.push({id:'gsc',name:'Google Search Console',status:'success',message:`${rows.length} filas consultadas; ${summary.updated} producto(s) actualizado(s). Periodo ${startDate} a ${endDate}. ${comparison}`,rows:rows.length,updated:summary.updated,startDate,endDate});
+      report.push({id:'gsc',name:'Google Search Console',status:'success',message:`${rows.length} filas consultadas; ${summary.updated} producto(s) actualizado(s); ${summary.reason||`${summary.unmatched??0} producto(s) sin coincidencia única de URL`}${summary.ambiguous?.length?`; ${summary.ambiguous.length} URL(s) ambiguas omitidas`:''}. Periodo ${startDate} a ${endDate}. ${comparison}`,rows:rows.length,updated:summary.updated,startDate,endDate});
     }catch(error){
       report.push({id:'gsc',name:'Google Search Console',status:'error',message:error?.message||'Error desconocido al consultar Search Console.'});
     }
   }
+  const ga4=config.ga4||{};
+  if(!ga4.propertyId){report.push({id:'ga4',name:'Google Analytics 4',status:'needs_setup',message:'Introduce y guarda el Property ID numérico de GA4 en Integraciones.'});}
+  else{
+    try{
+      onProgress('Consultando Google Analytics 4…');
+      const result=await queryGA4Summary({propertyId:ga4.propertyId,startDate:period.startDate,endDate:period.endDate,channel:ga4.channel||'organic'});
+      const rows=ga4RowsToObjects(result.data);const summary=rows[0]||{};
+      const reportData={propertyId:String(ga4.propertyId),channel:ga4.channel||'organic',startDate:period.startDate,endDate:period.endDate,rows:result.data?.rows||[],dimensionHeaders:result.data?.dimensionHeaders||[],metricHeaders:result.data?.metricHeaders||[],summary,updatedAt:new Date().toISOString()};
+      let productSync={updated:0,reason:'No consultado'};
+      try{
+        const landingResult=await runGA4Report({propertyId:ga4.propertyId,startDate:period.startDate,endDate:period.endDate,channel:ga4.channel||'organic',dimensions:[{name:'landingPage'}],metrics:[{name:'sessions'},{name:'totalUsers'},{name:'screenPageViews'},{name:'keyEvents'},{name:'purchaseRevenue'}],limit:10000});
+        productSync=await syncGA4LandingPagesToCatalog(ga4RowsToObjects(landingResult.data),{startDate:period.startDate,endDate:period.endDate,channel:ga4.channel||'organic'});
+      }catch(syncError){productSync={updated:0,reason:`No se sincronizaron fichas: ${syncError.message}`};}
+      reportData.productSync=productSync;
+      localStorage.setItem(GA4_STORAGE_KEY,JSON.stringify(reportData));
+      config.ga4={...ga4,enabled:true,configured:true,lastSync:reportData.updatedAt};saveIntegrationConfig(config);
+      const channelLabel=ga4.channel==='all'?'todos los canales':'Organic Search';
+      const syncLabel=productSync.updated?`${productSync.updated} productos actualizados`:'ningún producto actualizado';
+      const unmatchedLabel=productSync.unmatched?`; ${productSync.unmatched} URLs sin coincidencia`:'';
+      const ambiguousLabel=productSync.ambiguous?.length?`; ${productSync.ambiguous.length} URLs ambiguas omitidas`:'';
+      const syncReason=productSync.reason&&!productSync.updated?` Motivo: ${productSync.reason}`:'';
+      report.push({id:'ga4',name:'Google Analytics 4',status:'success',message:`Reporte real consultado para propiedad ${ga4.propertyId}, ${channelLabel}, ${period.startDate} a ${period.endDate}. Sesiones: ${Number(summary.sessions||0).toLocaleString('es-MX')}; usuarios: ${Number(summary.totalUsers||0).toLocaleString('es-MX')}; vistas: ${Number(summary.screenPageViews||0).toLocaleString('es-MX')}. Catálogo: ${syncLabel}${unmatchedLabel}${ambiguousLabel}.${syncReason}`,rows:result.data?.rows?.length||0,startDate:period.startDate,endDate:period.endDate,productSync});
+    }catch(error){report.push({id:'ga4',name:'Google Analytics 4',status:'error',message:error?.message||'No se pudo consultar GA4.'});}
+  }
   for(const [id,name,detail] of [
-    ['ga4','Google Analytics 4','La integración ejecutable requiere configurar un conector seguro de GA4; todavía no está implementado en esta versión frontend-only.'],
     ['merchant','Google Merchant Center','La sincronización de Merchant Center requiere implementar su API y autorización; todavía no está disponible.'],
     ['ads','Google Ads','La sincronización de Google Ads requiere un conector autorizado y backend; todavía no está disponible.'],
     ['trends','Google Trends','No hay una fuente/API de Trends configurada en esta versión; no se simularán datos.']
@@ -106,37 +198,68 @@ export async function syncAllSources({onProgress=()=>{},period=getGlobalPeriod()
 
 function escapeHtml(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 
-function normalizeProductUrl(value,siteUrl){const raw=String(value||'').trim();if(!raw)return '';try{if(/^https?:\/\//i.test(raw))return new URL(raw).href;const base=/^https?:\/\//i.test(siteUrl)?siteUrl:'https://'+String(siteUrl||'').replace(/^sc-domain:/,'');return new URL(raw.replace(/^\/+/,''),base.endsWith('/')?base:base+'/').href}catch{return raw}}
-function canonicalPageUrl(value,siteUrl){try{const u=new URL(normalizeProductUrl(value,siteUrl));u.hash='';u.search='';return u.href.replace(/\/$/,'').toLowerCase()}catch{return String(value||'').trim().replace(/\/$/,'').toLowerCase()}}
-function catalogProductForUrl(catalog,url,siteUrl){return (catalog?.data?.products||[]).find(p=>canonicalPageUrl(p.URL_Slug,siteUrl)===canonicalPageUrl(url,siteUrl))||null}
-
-async function syncGscRowsToCatalog(rows,{siteUrl,startDate,endDate}={}){
-  const stored=await loadCatalog();
-  const products=stored?.data?.products;
-  if(!Array.isArray(products)||!products.length)return {updated:0,matched:[]};
-  const byUrl=new Map();
-  for(const row of rows||[]){
-    const keys=row.keys||[];
-    // GSC places the page dimension at the end for supported combinations such as query,page/date,page.
-    const rawUrl=keys.find(key=>/^https?:\/\//i.test(String(key||'')));
-    if(!rawUrl)continue;
-    const key=canonicalPageUrl(rawUrl,siteUrl);
-    const prior=byUrl.get(key)||{clicks:0,impressions:0,positionWeighted:0};
-    const impressions=Number(row.impressions||0);
-    prior.clicks+=Number(row.clicks||0);prior.impressions+=impressions;prior.positionWeighted+=Number(row.position||0)*impressions;
-    byUrl.set(key,prior);
-  }
-  let updated=0;const matched=[];const now=new Date().toISOString();
-  const nextProducts=products.map(product=>{
-    const metric=byUrl.get(canonicalPageUrl(product.URL_Slug,siteUrl));
-    if(!metric)return product;
-    updated++;matched.push(product.SKU);
-    return {...product,Clicks_GSC:metric.clicks,Impresiones_GSC:metric.impressions,CTR_GSC:metric.impressions?metric.clicks/metric.impressions:0,Posicion_GSC:metric.impressions?metric.positionWeighted/metric.impressions:null,GSC_Periodo_Inicio:startDate,GSC_Periodo_Fin:endDate,GSC_Ultima_Actualizacion:now};
-  });
-  if(updated){await saveCatalog({...stored.data,products:nextProducts},stored.source||'real');window.dispatchEvent(new CustomEvent('gssc:catalog-updated',{detail:{skus:matched,source:'gsc-query'}}));}
-  return {updated,matched};
+function normalizeProductUrl(value,siteUrl){
+ const raw=String(value||'').trim();if(!raw)return '';
+ try{
+  if(/^https?:\/\//i.test(raw))return new URL(raw).href;
+  if(/^www\./i.test(raw))return new URL(`https://${raw}`).href;
+  const site=String(siteUrl||'').trim();
+  let origin;
+  if(/^https?:\/\//i.test(site))origin=new URL(site).origin;
+  else origin=`https://${site.replace(/^sc-domain:/i,'').split('/')[0]}`;
+  return new URL('/'+raw.replace(/^\/+/,''),origin).href;
+ }catch{return raw}
 }
-
+export function canonicalPageUrl(value,siteUrl){
+ try{
+  const u=new URL(normalizeProductUrl(value,siteUrl));
+  const host=u.hostname.toLowerCase().replace(/^www\./,'');
+  const port=(u.port&&!(u.protocol==='https:'&&u.port==='443')&&!(u.protocol==='http:'&&u.port==='80'))?`:${u.port}`:'';
+  let path=u.pathname.replace(/\/+$/,'');if(path==='/')path='';
+  return `${host}${port}${path}`.toLowerCase();
+ }catch{return String(value||'').trim().split(/[?#]/)[0].replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/+$/,'').toLowerCase()}
+}
+function catalogProductForUrl(catalog,url,siteUrl){
+ const key=canonicalPageUrl(url,siteUrl);
+ const matches=(catalog?.data?.products||[]).filter(p=>canonicalPageUrl(p.URL_Slug,siteUrl)===key);
+ return matches.length===1?matches[0]:null;
+}
+async function syncGscRowsToCatalog(rows,{siteUrl,startDate,endDate}={}){
+ const stored=await loadCatalog();
+ const products=stored?.data?.products;
+ if(stored?.source!=='real')return {updated:0,matched:[],unmatched:0,ambiguous:[],reason:'El catálogo activo no es el catálogo real. Activa el catálogo real para asociar métricas sin contaminar datos de prueba.'};
+ if(!Array.isArray(products)||!products.length)return {updated:0,matched:[],unmatched:0,ambiguous:[],reason:'No hay productos en el catálogo real activo.'};
+ const byUrl=new Map();
+ for(const row of rows||[]){
+  const keys=Array.isArray(row.keys)?row.keys:[];
+  const rawUrl=keys.find(k=>/^https?:\/\//i.test(String(k||''))||/^www\./i.test(String(k||'')));
+  if(!rawUrl)continue;
+  const key=canonicalPageUrl(rawUrl,siteUrl);if(!key)continue;
+  const m=byUrl.get(key)||{clicks:0,impressions:0,positionWeighted:0};
+  const impressions=Math.max(0,Number(row.impressions)||0);
+  m.clicks+=Math.max(0,Number(row.clicks)||0);m.impressions+=impressions;
+  m.positionWeighted+=Math.max(0,Number(row.position)||0)*impressions;
+  byUrl.set(key,m);
+ }
+ const productUrls=new Map();
+ for(const p of products){const key=canonicalPageUrl(p.URL_Slug,siteUrl);if(!key)continue;if(!productUrls.has(key))productUrls.set(key,[]);productUrls.get(key).push(p);}
+ const ambiguous=[...productUrls.entries()].filter(([key,arr])=>arr.length>1&&byUrl.has(key)).map(([url,arr])=>({url,skus:arr.map(p=>p.SKU)}));
+ const matched=[],now=new Date().toISOString();let updated=0;
+ const nextProducts=products.map(p=>{
+  const key=canonicalPageUrl(p.URL_Slug,siteUrl),same=productUrls.get(key)||[],m=byUrl.get(key);
+  // One URL mapped to multiple SKUs is ambiguous: never assign the same metrics blindly.
+  if(!m||same.length!==1)return p;
+  updated++;matched.push(p.SKU);
+  return {...p,Clicks_GSC:m.clicks,Impresiones_GSC:m.impressions,CTR_GSC:m.impressions?m.clicks/m.impressions:0,Posicion_GSC:m.impressions?m.positionWeighted/m.impressions:null,GSC_Periodo_Inicio:startDate,GSC_Periodo_Fin:endDate,GSC_Ultima_Actualizacion:now,GSC_Estado:'sincronizado'};
+ });
+ const matchedSet=new Set(matched.map(String));
+ const unmatched=products.filter(p=>!matchedSet.has(String(p.SKU))).length;
+ if(updated){
+  await saveCatalog({...stored.data,products:nextProducts},'real');
+  window.dispatchEvent(new CustomEvent('gssc:catalog-updated',{detail:{skus:matched,source:'gsc-query',startDate,endDate,updated,unmatched,ambiguous}}));
+ }
+ return {updated,matched,unmatched,ambiguous};
+}
 
 export function renderIntegrations(config=loadIntegrationConfig(),gatewayStatus=null){
  const clientId=getClientId();const connected=Boolean(config.gsc?.configured);
@@ -148,7 +271,8 @@ export function renderIntegrations(config=loadIntegrationConfig(),gatewayStatus=
  <label>Dimensiones<select id="gsc-dimensions"><option value="page">Página</option><option value="query,page">Consulta + página</option><option value="date,page">Fecha + página</option><option value="country,device,page">País + dispositivo + página</option></select></label>
  <label>Límite de filas<select id="gsc-row-limit"><option value="250">250</option><option value="1000">1,000</option><option value="5000">5,000</option></select></label><button class="primary-btn" id="gsc-run-query">Consultar Search Console</button><button class="secondary-btn" id="gsc-disconnect">Desconectar</button></div>
  <p class="integration-note" id="gsc-query-status" role="status">${connected?'Autorización registrada en esta sesión.':'Configura el ID de cliente y autoriza tu cuenta de Google.'} El token de acceso solo se mantiene en memoria y puede caducar.</p><div id="gsc-query-results" class="gsc-query-results" aria-live="polite"></div></section>
- <section class="integration-grid">${INTEGRATIONS.filter(i=>i.id!=='gsc').map(i=>{const c=config[i.id]||{};return `<article class="card integration-card"><div class="integration-head"><div><span class="integration-category">${i.category}</span><h3>${i.name}</h3></div><span class="integration-status">Pendiente</span></div><p>${i.description}</p><p class="integration-note">Esta fuente no forma parte de la conexión directa de Search Console de la Fase 22.</p></article>`}).join('')}</section>
+ <section class="card gsc-query-panel ga4-panel"><div><p class="eyebrow">GOOGLE ANALYTICS 4 · API OFICIAL</p><h2>Consultar comportamiento del sitio</h2><p>Usa el mismo OAuth de Google. En Google Analytics, copia el ID numérico de la propiedad (no el ID de flujo G-...). La primera consulta solicitará el permiso de solo lectura de Analytics.</p></div><div class="gsc-query-form"><label>Property ID de GA4<input id="ga4-property-id" inputmode="numeric" pattern="[0-9]+" placeholder="123456789" value="${escapeHtml(config.ga4?.propertyId||'')}"></label><label>Canal de tráfico<select id="ga4-channel"><option value="organic" ${(config.ga4?.channel||'organic')==='organic'?'selected':''}>Organic Search</option><option value="all" ${config.ga4?.channel==='all'?'selected':''}>Todos los canales</option></select></label><label>Desglosar resultados por<select id="ga4-dimension"><option value="date">Día</option><option value="landingPage">Página de destino</option><option value="sourceMedium">Fuente / medio</option><option value="channel">Grupo de canales</option></select></label><button class="primary-btn" id="ga4-save">Guardar configuración GA4</button><button class="primary-btn" id="ga4-query">Consultar GA4 ahora</button></div><p class="integration-note" id="ga4-query-status" role="status">${config.ga4?.configured?'Configuración guardada. Última sincronización: '+escapeHtml(config.ga4?.lastSync||'sin fecha'):'Configura la propiedad para habilitar consultas reales.'} El rango usa el selector global.</p><div id="ga4-query-results" class="gsc-query-results" aria-live="polite"></div></section>
+ <section class="integration-grid">${INTEGRATIONS.filter(i=>!['gsc','ga4'].includes(i.id)).map(i=>{const c=config[i.id]||{};return `<article class="card integration-card"><div class="integration-head"><div><span class="integration-category">${i.category}</span><h3>${i.name}</h3></div><span class="integration-status">Pendiente</span></div><p>${i.description}</p><p class="integration-note">Esta fuente todavía requiere su propia implementación y no genera datos simulados.</p></article>`}).join('')}</section>
  <section class="card integration-footer"><button class="primary-btn" id="save-integrations">Guardar preferencias</button><button class="secondary-btn" id="reset-integrations">Restablecer</button><p>El ID de cliente y la propiedad se guardan en el almacenamiento local del navegador. No se guarda el token de acceso de Google.</p></section>`;
 }
 
@@ -176,6 +300,9 @@ export function bindIntegrations(root,toast){
    finally{if(button)button.disabled=false}
  });
  root.querySelector('#gsc-disconnect')?.addEventListener('click',()=>{disconnectGoogleSearchConsole();root.querySelector('#gsc-query-status').textContent='Conexión local borrada. Si Google conserva permisos, puedes revocarlos en tu cuenta de Google.';toast('Search Console desconectado')});
- root.querySelector('#save-integrations')?.addEventListener('click',()=>{const config=loadIntegrationConfig();config.gsc={...config.gsc,siteUrl:root.querySelector('#gsc-site-url')?.value.trim()||''};saveIntegrationConfig(config);toast('Preferencias guardadas')});
+ const saveGA4=()=>{const propertyId=root.querySelector('#ga4-property-id')?.value.trim()||'';const channel=root.querySelector('#ga4-channel')?.value||'organic';if(!/^\d+$/.test(propertyId)){root.querySelector('#ga4-query-status').textContent='El Property ID debe contener solo números. No uses el ID de flujo G-...';return false}const config=loadIntegrationConfig();config.ga4={...config.ga4,propertyId,channel,enabled:true};saveIntegrationConfig(config);root.querySelector('#ga4-query-status').textContent='Configuración GA4 guardada. Autoriza Google y ejecuta una consulta real.';return true};
+ root.querySelector('#ga4-save')?.addEventListener('click',()=>{if(saveGA4())toast('Configuración GA4 guardada')});
+ root.querySelector('#ga4-query')?.addEventListener('click',async()=>{const statusEl=root.querySelector('#ga4-query-status'),resultsEl=root.querySelector('#ga4-query-results'),button=root.querySelector('#ga4-query');if(!saveGA4())return;const propertyId=root.querySelector('#ga4-property-id').value.trim(),channel=root.querySelector('#ga4-channel').value,dimension=root.querySelector('#ga4-dimension')?.value||'date',period=getGlobalPeriod();button.disabled=true;statusEl.textContent='Consultando Google Analytics 4…';resultsEl.innerHTML='';try{const result=await runGA4Report({propertyId,startDate:period.startDate,endDate:period.endDate,channel,dimensions:ga4DimensionConfig(dimension),metrics:[{name:'sessions'},{name:'totalUsers'},{name:'screenPageViews'},{name:'keyEvents'},{name:'purchaseRevenue'}],limit:1000});const rows=ga4RowsToObjects(result.data);const row=rows.reduce((acc,item)=>{for(const key of ['sessions','totalUsers','screenPageViews','keyEvents','purchaseRevenue'])acc[key]=Number(acc[key]||0)+Number(item[key]||0);return acc;},{});const previous=previousEquivalentRange(period);let previousRows=[];try{const previousResult=await runGA4Report({propertyId,startDate:previous.startDate,endDate:previous.endDate,channel,dimensions:[],metrics:[{name:'sessions'},{name:'totalUsers'},{name:'screenPageViews'},{name:'keyEvents'},{name:'purchaseRevenue'}],limit:1});previousRows=ga4RowsToObjects(previousResult.data)}catch{}const previousSummary=previousRows[0]||{};let productSync={updated:0,reason:'El catálogo no se modificó.'};try{const landingResult=await runGA4Report({propertyId,startDate:period.startDate,endDate:period.endDate,channel,dimensions:[{name:'landingPage'}],metrics:[{name:'sessions'},{name:'totalUsers'},{name:'screenPageViews'},{name:'keyEvents'},{name:'purchaseRevenue'}],limit:10000});productSync=await syncGA4LandingPagesToCatalog(ga4RowsToObjects(landingResult.data),{startDate:period.startDate,endDate:period.endDate,channel});}catch(syncError){productSync={updated:0,reason:syncError.message};}const metrics=[['Sesiones','sessions'],['Usuarios','totalUsers'],['Vistas de página','screenPageViews'],['Eventos clave','keyEvents'],['Ingresos de compra','purchaseRevenue']];resultsEl.innerHTML=`<div class="gsc-result-summary"><strong>GA4 · propiedad ${escapeHtml(propertyId)}</strong><span>${escapeHtml(period.startDate)} a ${escapeHtml(period.endDate)} · ${channel==='all'?'Todos los canales':'Organic Search'} · desglose: ${escapeHtml(dimension)}</span></div><div class="table-wrap"><table><thead><tr><th>Métrica</th><th>Periodo seleccionado</th><th>Periodo anterior</th><th>Variación</th></tr></thead><tbody>${metrics.map(([label,key])=>{const v=Number(row[key]||0),pv=Number(previousSummary[key]||0),delta=pv?((v-pv)/pv)*100:null;return `<tr><td>${label}</td><td>${key==='purchaseRevenue'?`${v.toLocaleString('es-MX',{maximumFractionDigits:2})} (moneda configurada en GA4)`:v.toLocaleString('es-MX')}</td><td>${pv.toLocaleString('es-MX',{maximumFractionDigits:2})}</td><td>${delta===null?'Sin base':`${delta>0?'+':''}${delta.toFixed(1)}%`}</td></tr>`}).join('')}</tbody></table></div><details><summary>Ver respuesta JSON</summary><pre>${escapeHtml(JSON.stringify(result.data,null,2))}</pre></details>`;const config=loadIntegrationConfig();config.ga4={...config.ga4,propertyId,channel,enabled:true,configured:true,lastSync:new Date().toISOString()};saveIntegrationConfig(config);localStorage.setItem(GA4_STORAGE_KEY,JSON.stringify({propertyId,channel,startDate:period.startDate,endDate:period.endDate,summary:row,rows,dimension,previousRange:previous,previousSummary,updatedAt:config.ga4.lastSync}));statusEl.textContent=`Consulta real completada. Productos vinculados: ${productSync.updated}. ${productSync.reason||''} Los valores reflejan la propiedad, canal y periodo seleccionados.`;toast('Consulta GA4 completada');}catch(error){statusEl.textContent=`No se pudo consultar GA4: ${error.message}. Revisa Property ID, permisos, API habilitada y rango.`}finally{button.disabled=false}});
+ root.querySelector('#save-integrations')?.addEventListener('click',()=>{const config=loadIntegrationConfig();config.gsc={...config.gsc,siteUrl:root.querySelector('#gsc-site-url')?.value.trim()||''};const propertyId=root.querySelector('#ga4-property-id')?.value.trim()||'';if(propertyId&&/^\d+$/.test(propertyId))config.ga4={...config.ga4,propertyId,channel:root.querySelector('#ga4-channel')?.value||'organic',enabled:true};saveIntegrationConfig(config);toast('Preferencias guardadas')});
  root.querySelector('#reset-integrations')?.addEventListener('click',()=>{resetIntegrationConfig();localStorage.removeItem('gssc.google.client_id');accessToken=null;tokenExpiresAt=0;root.innerHTML=renderIntegrations(loadIntegrationConfig());bindIntegrations(root,toast);toast('Configuración restablecida')});
 }
