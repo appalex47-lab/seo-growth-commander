@@ -6,7 +6,7 @@ import {renderMatrix,mountMatrix} from './matrix.js';
 import {renderBacklog,bindBacklog} from './backlog.js';
 import {renderLookup,bindLookup} from './lookup.js';
 import {loadScenarios,renderTestLab,bindTestLab} from './testLab.js';
-import {loadIntegrationConfig,renderIntegrations,bindIntegrations,getGatewayStatus,syncAllSources} from './integrations.js';
+import {loadIntegrationConfig,renderIntegrations,bindIntegrations,syncAllSources} from './integrations.js';
 import {loadAIConfig,renderAI,bindAI} from './ai.js';
 import {saveCatalog,loadCatalog,deleteCatalog,deleteCatalogBySource} from './storage.js';
 // Compatibility note: legacy reset used `await deleteCatalog()`; the test-data button now deletes only the test catalog.
@@ -38,14 +38,15 @@ function render(){
   title.textContent=titles[state.view];
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
   if(state.view==='catalog'){renderCatalog().then(html=>{if(state.view!=='catalog')return;view.innerHTML=html;bindCatalog(view,toast,async()=>{const stored=await loadCatalog();state.data=stored?.data||null;state.dataSource=stored?.source||'none';setStatus();render()})}).catch(err=>{view.innerHTML=`<div class="card error">No se pudo abrir el catálogo: ${escapeHtml(err.message)}</div>`});return}
+  // Las secciones de configuración deben abrir incluso cuando no hay un dataset cargado.
+  if(state.view==='integrations'){view.innerHTML=renderIntegrations(loadIntegrationConfig(),{available:false,error:'loading'});bindIntegrations(view,toast);return}
+  if(state.view==='ai'){view.innerHTML=renderAI(loadAIConfig());bindAI(view,toast);return}
+  if(state.view==='lab'){view.innerHTML=state.scenarios?renderTestLab(state.scenarios):'<div class="card loading">Cargando laboratorio…</div>'; if(state.scenarios) bindTestLab(state.scenarios,loadScenario);return}
   if(!state.data){view.innerHTML=emptyState();document.getElementById('empty-add-test')?.addEventListener('click',addTestData);return}
   if(state.view==='overview'){view.innerHTML=renderOverview(state.data);mountOverviewChart(state.data)}
   if(state.view==='matrix'){view.innerHTML=renderMatrix(state.data);mountMatrix(state.data,drawer)}
   if(state.view==='backlog'){view.innerHTML=renderBacklog(state.data);bindBacklog(state.data)}
   if(state.view==='lookup'){view.innerHTML=renderLookup();bindLookup(state.data,drawer)}
-  if(state.view==='lab'){view.innerHTML=state.scenarios?renderTestLab(state.scenarios):'<div class="card loading">Cargando laboratorio…</div>'; if(state.scenarios) bindTestLab(state.scenarios,loadScenario)}
-  if(state.view==='integrations'){view.innerHTML=renderIntegrations(loadIntegrationConfig(),{available:false,error:'loading'});bindIntegrations(view,toast)}
-  if(state.view==='ai'){view.innerHTML=renderAI(loadAIConfig());bindAI(view,toast)}
 }
 
 function setStatus(){
