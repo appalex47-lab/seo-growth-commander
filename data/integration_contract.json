@@ -1,13 +1,69 @@
 {
-  "version": "1.0.0",
-  "phase": 7,
+  "version": "1.1.0",
+  "phase": 33,
   "principle": "sources enrich canonical product records; business engine remains source of truth for derived metrics",
   "sources": [
-    {"id":"gsc","name":"Google Search Console","mode":"adapter-ready","primary_fields":["Clicks_GSC","Impresiones_GSC","CTR_GSC","Posicion_GSC"]},
-    {"id":"ga4","name":"Google Analytics 4","mode":"adapter-ready","primary_fields":["Sesiones_Organicas","Conversion_Rate","AOV"]},
-    {"id":"merchant","name":"Google Merchant Center","mode":"adapter-ready","primary_fields":["Stock","Precio","Categoria","Marca"]},
-    {"id":"ads","name":"Google Ads","mode":"adapter-ready","primary_fields":["CPC","Gasto_Ads"]},
-    {"id":"trends","name":"Google Trends / Market Data","mode":"adapter-ready","primary_fields":["Volumen_Mercado","Tendencia_Mercado","Tendencia_Marca","Tendencia_Sustancia"]}
+    {
+      "id": "gsc",
+      "name": "Google Search Console",
+      "mode": "adapter-ready",
+      "primary_fields": [
+        "Clicks_GSC",
+        "Impresiones_GSC",
+        "CTR_GSC",
+        "Posicion_GSC"
+      ]
+    },
+    {
+      "id": "ga4",
+      "name": "Google Analytics 4",
+      "mode": "adapter-ready",
+      "primary_fields": [
+        "Sesiones_Organicas",
+        "Conversion_Rate",
+        "AOV"
+      ]
+    },
+    {
+      "id": "merchant",
+      "name": "Google Merchant Center",
+      "mode": "adapter-ready",
+      "primary_fields": [
+        "Stock",
+        "Precio",
+        "Categoria",
+        "Marca"
+      ]
+    },
+    {
+      "id": "ads",
+      "name": "Google Ads",
+      "mode": "browser-oauth-readonly-initial",
+      "primary_fields": [
+        "campaign.impressions",
+        "campaign.clicks",
+        "campaign.cost_micros",
+        "campaign.conversions",
+        "campaign.conversions_value",
+        "shopping.product_item_id",
+        "shopping.product_title"
+      ]
+    },
+    {
+      "id": "trends",
+      "name": "Google Trends / Market Data",
+      "mode": "adapter-ready",
+      "primary_fields": [
+        "Volumen_Mercado",
+        "Tendencia_Mercado",
+        "Tendencia_Marca",
+        "Tendencia_Sustancia"
+      ]
+    }
   ],
-  "security": {"secrets_storage":"not implemented in phase 7","browser_local_storage":"configuration metadata only","live_requests":false}
+  "security": {
+    "secrets_storage": "not implemented in phase 7",
+    "browser_local_storage": "configuration metadata only",
+    "live_requests": false
+  }
 }
