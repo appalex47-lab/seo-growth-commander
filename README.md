@@ -104,3 +104,6 @@ Google Ads ahora participa en la acción de sincronización central si el ID de 
 ## Fase 39 — Auditoría final y estabilización
 
 Consulta `FASE_39_AUDITORIA_FINAL_ESTABILIZACION.md` para el resultado de la suite local, validaciones manuales pendientes y limitaciones conocidas.
+
+## Fase 40 — Inteligencia de búsquedas
+La herramienta incluye ahora una sección independiente `Inteligencia de búsquedas` en el menú principal. Consulta la documentación `FASE_40_INTELIGENCIA_BUSQUEDAS.md` para el alcance, la persistencia local, los filtros y las limitaciones de asociación entre términos y productos. Para poblarla, consulta Search Console con dimensiones `Consulta + página` y Google Ads con el informe `Términos de búsqueda`.
