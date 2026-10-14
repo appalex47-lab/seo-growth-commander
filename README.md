@@ -86,3 +86,21 @@ Tras una consulta exitosa en Integraciones, el panel muestra hechos, métricas d
 ## Fase 24 — Diagnóstico SEO por producto
 
 La sección de consulta de Search Console incorpora un panel que lee el catálogo activo de IndexedDB, permite seleccionar una ficha, revisar su URL y comparar clics, impresiones, CTR y posición contra el periodo anterior de igual duración. Ver `docs/phases/fase-24-vinculo-producto-search-console.md`.
+
+
+## Fase 33 — Google Ads
+Consulta inicial de solo lectura para campañas y productos de Shopping desde Integraciones. Reutiliza OAuth de Google y el selector global de periodo. Ver `FASE_33_GOOGLE_ADS.md`. La consulta real depende del acceso API del proyecto y del consentimiento del usuario; no se consideran verificados datos en vivo hasta ejecutar una consulta en la cuenta.
+
+
+## Fase 37 — Google Ads y catálogo
+
+La consulta de productos de Shopping puede sincronizar KPI al catálogo por coincidencia exacta y única entre `segments.product_item_id` y `SKU`. Los campos se guardan como `Ads_*`, sin sobrescribir GSC/GA4. Los SKU duplicados o sin coincidencia se reportan y no se asignan a ciegas. Ver `FASE_37_VINCULACION_ADS_CATALOGO.md`.
+
+
+## Fase 38 — Sincronización central de Google Ads
+
+Google Ads ahora participa en la acción de sincronización central si el ID de cliente está guardado en Integraciones. Se consultan campañas en modo de solo lectura y se intentan sincronizar métricas de Shopping al catálogo por SKU/item_id exacto y único. La fuente informa configuración faltante, errores, filas y resultados de asociación. Merchant Center y Trends siguen pendientes. Consulta `FASE_38_SINCRONIZACION_CENTRAL_ADS.md` para límites y validación manual.
+
+## Fase 39 — Auditoría final y estabilización
+
+Consulta `FASE_39_AUDITORIA_FINAL_ESTABILIZACION.md` para el resultado de la suite local, validaciones manuales pendientes y limitaciones conocidas.
