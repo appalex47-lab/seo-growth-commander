@@ -107,3 +107,7 @@ Consulta `FASE_39_AUDITORIA_FINAL_ESTABILIZACION.md` para el resultado de la sui
 
 ## Fase 40 — Inteligencia de búsquedas
 La herramienta incluye ahora una sección independiente `Inteligencia de búsquedas` en el menú principal. Consulta la documentación `FASE_40_INTELIGENCIA_BUSQUEDAS.md` para el alcance, la persistencia local, los filtros y las limitaciones de asociación entre términos y productos. Para poblarla, consulta Search Console con dimensiones `Consulta + página` y Google Ads con el informe `Términos de búsqueda`.
+
+
+## Fase 41
+Mejoras de rendimiento de tablas GSC/Inteligencia de búsquedas, paginación de 100 filas y eventos de actualización al completar consultas. Consulta `FASE_41_RENDIMIENTO_SEARCH_CONSOLE.md`.
