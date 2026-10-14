@@ -11,13 +11,14 @@ import {loadAIConfig,renderAI,bindAI} from './ai.js';
 import {saveCatalog,loadCatalog,deleteCatalog,deleteCatalogBySource} from './storage.js';
 // Compatibility note: legacy reset used `await deleteCatalog()`; the test-data button now deletes only the test catalog.
 import {renderCatalog,bindCatalog} from './catalog.js';
+import {renderSearchIntelligence,bindSearchIntelligence} from './searchIntelligence.js';
 
 const state={data:null,view:'overview',dataSource:'none',scenarios:null};
 document.getElementById('global-period-host').innerHTML=renderPeriodControls();
 function bindGlobalPeriod(){const select=document.getElementById('global-period-select'),custom=document.getElementById('global-period-custom'),label=document.getElementById('global-period-label');const saved=loadGlobalPeriod();const update=(p)=>{try{saveGlobalPeriod(p);const range=periodRange(p.key,p.startDate,p.endDate);label.textContent=range.label;window.dispatchEvent(new CustomEvent('gssc:period-changed',{detail:range}));}catch(e){toast(e.message)}};select.addEventListener('change',()=>{custom.hidden=select.value!=='custom';const p={key:select.value,startDate:'',endDate:''};if(select.value==='custom'){const r=periodRange('28d');document.getElementById('global-period-start').value=r.startDate;document.getElementById('global-period-end').value=r.endDate;return}update(p)});document.getElementById('global-period-apply').addEventListener('click',()=>update({key:'custom',startDate:document.getElementById('global-period-start').value,endDate:document.getElementById('global-period-end').value}));window.addEventListener('gssc:period-changed',()=>{if(state.view==='integrations')render()});label.textContent=periodRange(saved.key,saved.startDate,saved.endDate).label;}
 bindGlobalPeriod();
 const view=document.getElementById('app-view'),title=document.getElementById('view-title'),status=document.getElementById('data-status');
-const titles={overview:'Executive Overview',matrix:'Strategic Action Matrix',backlog:'Operational Backlog',lookup:'Product Lookup',lab:'Test Data Lab',integrations:'Integraciones',ai:'Configuración IA',catalog:'Catálogo y datos'};
+const titles={overview:'Executive Overview',matrix:'Strategic Action Matrix',backlog:'Operational Backlog',lookup:'Product Lookup',lab:'Test Data Lab',integrations:'Integraciones',ai:'Configuración IA',catalog:'Catálogo y datos',searchIntelligence:'Inteligencia de búsquedas'};
 window.addEventListener('gssc:catalog-updated',async()=>{try{const stored=await loadCatalog();state.data=stored?.data||state.data;state.dataSource=stored?.source||state.dataSource;setStatus();if(state.view==='backlog'||state.view==='lookup')render();toast('Métricas de Search Console guardadas en el catálogo');}catch(error){toast('Las métricas se guardaron, pero no se pudo actualizar la vista');}});
 
 
@@ -37,6 +38,7 @@ function emptyState(){return `<section class="card dataset-empty"><div class="em
 function render(){
   title.textContent=titles[state.view];
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
+  if(state.view==='searchIntelligence'){view.innerHTML=renderSearchIntelligence();bindSearchIntelligence(view,toast);return}
   if(state.view==='catalog'){renderCatalog().then(html=>{if(state.view!=='catalog')return;view.innerHTML=html;bindCatalog(view,toast,async()=>{const stored=await loadCatalog();state.data=stored?.data||null;state.dataSource=stored?.source||'none';setStatus();render()})}).catch(err=>{view.innerHTML=`<div class="card error">No se pudo abrir el catálogo: ${escapeHtml(err.message)}</div>`});return}
   // Las secciones de configuración deben abrir incluso cuando no hay un dataset cargado.
   if(state.view==='integrations'){view.innerHTML=renderIntegrations(loadIntegrationConfig(),{available:false,error:'loading'});bindIntegrations(view,toast);return}
